@@ -1,0 +1,86 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+use IRC::Bot;
+use File::ChangeNotify;
+use MIME::Lite;
+
+# Set the directory path to monitor
+my $dir_path = '/path/to/folder';
+
+# Set the email settings
+my $from_email = 'sender@example.com';
+my $to_email = 'recipient@example.com';
+my $subject = 'New File Added';
+my $smtp_host = 'smtp.example.com';
+my $smtp_user = 'smtp_user';
+my $smtp_pass = 'smtp_password';
+
+# Create a change notifier object for the directory
+my $notifier = File::ChangeNotify->instantiate_watcher(
+    directories => [$dir_path],
+    filter => qr/./,  # Monitor all types of files
+);
+
+# Create a new IRC bot object
+my $bot = IRC::Bot->new();
+
+# Set the IRC server connection settings
+$bot->server('irc.example.com');
+$bot->port(6667);
+$bot->channel('#channel_name');
+
+# Set the bot's nickname
+$bot->nick('my_bot');
+
+# Set the bot's username and real name
+$bot->username('my_bot');
+$bot->name('My Bot');
+
+# Define the bot's actions when it joins the channel
+$bot->on(join => sub {
+    my ($self, $event) = @_;
+
+    # Send a welcome message
+    $self->say(
+        channel => $event->{channel},
+        body => "Hello, I'm monitoring the folder $dir_path for new files.",
+    );
+});
+
+# Start the IRC bot
+$bot->start();
+
+# Check for file changes and send email notifications
+while (1) {
+    # Wait for a file change event
+    my @events = $notifier->wait_for_events();
+
+    # Iterate through the events
+    foreach my $event (@events) {
+        my $file = $event->path();
+
+        # Only send email for new files that are added to the directory
+        if ($event->type() eq 'create') {
+            # Create the email message
+            my $message = MIME::Lite->new(
+                From    => $from_email,
+                To      => $to_email,
+                Subject => $subject,
+                Type    => 'text/plain',
+                Data    => "A new file '$file' has been added to the folder.",
+            );
+
+            # Send the email message
+            $message->send(
+                'smtp',
+                $smtp_host,
+                AuthUser => $smtp_user,
+                AuthPass => $smtp_pass,
+            );
+
+            print "Email sent for file: $file\n";
+        }
+    }
+}
